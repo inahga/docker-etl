@@ -9,20 +9,65 @@ import subprocess
 import time
 import typing
 
-from google.cloud import bigquery
+# from google.cloud import bigquery
 import requests
 
-LEADER = "https://dap-07-1.api.divviup.org"
-CMD = f"./collect --task-id {{task_id}} --leader {LEADER} --vdaf {{vdaf}} {{vdaf_args}} --authorization-bearer-token {{auth_token}} --batch-interval-start {{timestamp}} --batch-interval-duration {{duration}} --hpke-config {{hpke_config}} --hpke-private-key {{hpke_private_key}}"
+LEADER = "https://staging-dap-07.api.divviup.org/"
+CMD = f"/home/inahga/Projects/docker-etl/jobs/dap-collector/dap_collector/collect --task-id {{task_id}} --leader {LEADER} --vdaf {{vdaf}} --batch-interval-start {{timestamp}} --batch-interval-duration {{duration}} --collector-credential-file ~/Projects/credentials.json"
 INTERVAL_LENGTH = 300
 
 
-def read_tasks(task_config_url):
-    """Read task configuration from Google Cloud bucket."""
-
-    resp = requests.get(task_config_url)
-    tasks = resp.json()
-    return tasks
+def read_tasks():
+    return [
+        {
+            "task_id": "5gw0C5DByr09JgwjY5f85YDy5MmS9By34YOOJBN0m9w",
+            "vdaf": "count",
+        },
+        {
+            "task_id": "5gw0C5DByr09JgwjY5f85YDy5MmS9By34YOOJBN0m9w",
+            "vdaf": "count",
+        },
+        {
+            "task_id": "5gw0C5DByr09JgwjY5f85YDy5MmS9By34YOOJBN0m9w",
+            "vdaf": "count",
+        },
+        {
+            "task_id": "5gw0C5DByr09JgwjY5f85YDy5MmS9By34YOOJBN0m9w",
+            "vdaf": "count",
+        },
+        {
+            "task_id": "5gw0C5DByr09JgwjY5f85YDy5MmS9By34YOOJBN0m9w",
+            "vdaf": "count",
+        },
+        {
+            "task_id": "5gw0C5DByr09JgwjY5f85YDy5MmS9By34YOOJBN0m9w",
+            "vdaf": "count",
+        },
+        {
+            "task_id": "5gw0C5DByr09JgwjY5f85YDy5MmS9By34YOOJBN0m9w",
+            "vdaf": "count",
+        },
+        {
+            "task_id": "5gw0C5DByr09JgwjY5f85YDy5MmS9By34YOOJBN0m9w",
+            "vdaf": "count",
+        },
+        {
+            "task_id": "5gw0C5DByr09JgwjY5f85YDy5MmS9By34YOOJBN0m9w",
+            "vdaf": "count",
+        },
+        {
+            "task_id": "5gw0C5DByr09JgwjY5f85YDy5MmS9By34YOOJBN0m9w",
+            "vdaf": "count",
+        },
+        {
+            "task_id": "5gw0C5DByr09JgwjY5f85YDy5MmS9By34YOOJBN0m9w",
+            "vdaf": "count",
+        },
+        {
+            "task_id": "5gw0C5DByr09JgwjY5f85YDy5MmS9By34YOOJBN0m9w",
+            "vdaf": "count",
+        },
+    ]
 
 
 def toh(timestamp):
@@ -30,7 +75,7 @@ def toh(timestamp):
     return datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc)
 
 
-async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
+async def collect_once(task, timestamp, duration):
     """Runs collection for a single time interval.
 
     This uses the Janus collect binary. The result is formatted to fit the BQ table.
@@ -40,26 +85,21 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
 
     # Prepare output
     res = {}
-    res["metric_type"] = task["metric_type"]
     res["task_id"] = task["task_id"]
 
     res["collection_time"] = collection_time
     res["slot_start"] = timestamp
 
     # Convert VDAF description to string for command line use
-    vdaf_args = ""
-    for k, v in task["vdaf_args_structured"].items():
-        vdaf_args += f" --{k} {v}"
+    # vdaf_args = ""
+    # for k, v in task["vdaf_args_structured"].items():
+    #     vdaf_args += f" --{k} {v}"
 
     cmd = CMD.format(
         timestamp=timestamp,
         duration=duration,
-        hpke_private_key=hpke_private_key,
-        auth_token=auth_token,
         task_id=task["task_id"],
         vdaf=task["vdaf"],
-        vdaf_args=vdaf_args,
-        hpke_config=task["hpke_config"],
     )
 
     # How long an individual collection can take before it is killed.
@@ -81,6 +121,9 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
         return res
     res["collection_duration"] = time.perf_counter() - start_counter
 
+    print(stdout)
+    print(stderr)
+
     # Parse the output of the collect binary
     if proc.returncode == 1:
         if (
@@ -97,7 +140,7 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
                     entries = line[21:-1]
                     entries = list(map(int, entries.split(",")))
                     res["value"] = entries
-                elif task["vdaf"] == "sum":
+                elif task["vdaf"] in ["sum", "count"]:
                     s = int(line[20:])
                     res["value"] = [s]
                 else:
@@ -115,6 +158,7 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
                 print(f"UNHANDLED OUTPUT LINE: {line}")
                 raise NotImplementedError
 
+    print(res)
     return res
 
 
@@ -127,7 +171,7 @@ async def process_queue(q: asyncio.Queue, results: list):
 
 
 async def collect_many(
-    task, time_from, time_until, interval_length, hpke_private_key, auth_token
+    task, time_from, time_until, interval_length,
 ):
     """Collects data for a given time interval.
 
@@ -140,7 +184,7 @@ async def collect_many(
     jobs = asyncio.Queue(288)
     results = []
     while start + interval_length <= time_until:
-        await jobs.put((task, start, interval_length, hpke_private_key, auth_token))
+        await jobs.put((task, start, interval_length))
         start += interval_length
     workers = []
     for _ in range(10):
@@ -150,82 +194,28 @@ async def collect_many(
     return results
 
 
-async def collect_task(task, auth_token, hpke_private_key, date):
+async def collect_task(task, date):
     """Collects data for the given task and the given day."""
     start = datetime.datetime.fromisoformat(date)
     start = start.replace(tzinfo=datetime.timezone.utc)
     end = start + datetime.timedelta(days=1)
 
     results = await collect_many(
-        task, start, end, INTERVAL_LENGTH, hpke_private_key, auth_token
+        task, start, end, INTERVAL_LENGTH
     )
 
     return results
 
-
-def ensure_table(bqclient, table_id):
-    """Checks if the table exists in BQ and creates it otherwise.
-    Fails if the table exists but has the wrong schema.
-    """
-    schema = [
-        bigquery.SchemaField("collection_time", "TIMESTAMP", mode="REQUIRED"),
-        bigquery.SchemaField("collection_duration", "FLOAT", mode="REQUIRED"),
-        bigquery.SchemaField("task_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("metric_type", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("slot_start", "TIMESTAMP", mode="REQUIRED"),
-        bigquery.SchemaField("report_count", "INTEGER"),
-        bigquery.SchemaField("error", "STRING"),
-        bigquery.SchemaField("value", "INTEGER", mode="REPEATED"),
-    ]
-
-    table = bigquery.Table(table_id, schema=schema)
-    print(f"Making sure the table {table_id} exists.")
-    table = bqclient.create_table(table, exists_ok=True)
-
-
-def store_data(results, bqclient, table_id):
-    """Inserts the results into BQ. Assumes that they are already in the right format"""
-    insert_res = bqclient.insert_rows_json(table=table_id, json_rows=results)
-    if len(insert_res) != 0:
-        print(insert_res)
-        assert len(insert_res) == 0
-
-
 @click.command()
-@click.option("--project", help="GCP project id", required=True)
-@click.option(
-    "--table-id",
-    help="The aggregated DAP measurements will be stored in this table.",
-    required=True,
-)
-@click.option(
-    "--auth-token",
-    help="HTTP bearer token to authenticate to the leader",
-    required=True,
-)
-@click.option(
-    "--hpke-private-key",
-    help="The private key used to decrypt shares from the leader and helper.",
-    required=True,
-)
 @click.option(
     "--date",
     help="Date at which the backfill will start, going backwards (YYYY-MM-DD)",
     required=True,
 )
-@click.option(
-    "--task-config-url",
-    help="URL where a JSON definition of the tasks to be collected can be found.",
-    required=True,
-)
-def main(project, table_id, auth_token, hpke_private_key, date, task_config_url):
-    table_id = project + "." + table_id
-    bqclient = bigquery.Client(project=project)
-    ensure_table(bqclient, table_id)
-    for task in read_tasks(task_config_url):
+def main(date):
+    for task in read_tasks():
         print(f"Now processing task: {task['task_id']}")
-        results = asyncio.run(collect_task(task, auth_token, hpke_private_key, date))
-        store_data(results, bqclient, table_id)
+        results = asyncio.run(collect_task(task, date))
 
 
 if __name__ == "__main__":
